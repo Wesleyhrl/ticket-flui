@@ -1,17 +1,15 @@
 import prisma from '../lib/prisma'
-import { Chamado, Prioridade, Status } from '../app/generated/prisma'
-import { selecionarResponsavelAutomatico } from './distribuicaoAutomaticaService'
-
-// ────────────────────────────────────────────────────────────
-// Tipos de input
-// ────────────────────────────────────────────────────────────
+// ✅ Enums de /enums
+import { Status, Prioridade } from '../app/generated/prisma/enums'
+// ✅ Tipos de /client (server-side) — nomes sem sufixo Model
+import type { Chamado } from '../app/generated/prisma/client'
+import { selecionarResponsavelAutomatico } from './destribuicao'
 
 export interface CriarChamadoInput {
   titulo: string
   descricao?: string
   prioridade: Prioridade
   solicitante_nome?: string
-  // Quando não informado, usa distribuição automática
   id_responsavel?: number
 }
 
@@ -23,9 +21,7 @@ export interface AtualizarChamadoInput {
   id_responsavel?: number
 }
 
-// ────────────────────────────────────────────────────────────
-// Validações (puras — fáceis de testar unitariamente)
-// ────────────────────────────────────────────────────────────
+// ─── Validações puras ────────────────────────────────────────────
 
 function validarTitulo(titulo: string): void {
   if (!titulo || titulo.trim() === '') {
@@ -45,14 +41,11 @@ function validarChamadoNaoFechado(chamado: Chamado): void {
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// CRUD
-// ────────────────────────────────────────────────────────────
+// ─── CRUD ────────────────────────────────────────────────────────
 
 export async function criarChamado(data: CriarChamadoInput): Promise<Chamado> {
   validarTitulo(data.titulo)
 
-  // Resolve responsável: manual ou automático
   const id_responsavel = data.id_responsavel
     ? data.id_responsavel
     : (await selecionarResponsavelAutomatico()).id
@@ -61,10 +54,10 @@ export async function criarChamado(data: CriarChamadoInput): Promise<Chamado> {
 
   return prisma.chamado.create({
     data: {
-      titulo:          data.titulo.trim(),
-      descricao:       data.descricao,
-      prioridade:      data.prioridade,
-      status:          Status.ABERTO,   // sempre começa ABERTO
+      titulo:           data.titulo.trim(),
+      descricao:        data.descricao,
+      prioridade:       data.prioridade,
+      status:           Status.ABERTO,
       id_responsavel,
       solicitante_nome: data.solicitante_nome,
     },
@@ -78,28 +71,26 @@ export async function listarChamados(filtros?: {
 }): Promise<Chamado[]> {
   return prisma.chamado.findMany({
     where: {
-      ...(filtros?.status        && { status: filtros.status }),
-      ...(filtros?.prioridade    && { prioridade: filtros.prioridade }),
+      ...(filtros?.status         && { status: filtros.status }),
+      ...(filtros?.prioridade     && { prioridade: filtros.prioridade }),
       ...(filtros?.id_responsavel && { id_responsavel: filtros.id_responsavel }),
     },
-    orderBy: [
-      // ALTA primeiro, depois pela mais antiga
-      { prioridade: 'desc' },
-      { data_abertura: 'asc' },
-    ],
-    include: { responsavel: { select: { id: true, nome: true, email: true } } },
+    orderBy: [{ prioridade: 'desc' }, { data_abertura: 'asc' }],
+    include: {
+      responsavel: { select: { id: true, nome: true, email: true } },
+    },
   })
 }
 
 export async function buscarChamadoPorId(id: number): Promise<Chamado> {
   const chamado = await prisma.chamado.findUnique({
     where: { id },
-    include: { responsavel: { select: { id: true, nome: true, email: true } } },
+    include: {
+      responsavel: { select: { id: true, nome: true, email: true } },
+    },
   })
 
-  if (!chamado) {
-    throw new Error('Chamado não encontrado')
-  }
+  if (!chamado) throw new Error('Chamado não encontrado')
 
   return chamado
 }
@@ -109,34 +100,42 @@ export async function atualizarChamado(
   data: AtualizarChamadoInput,
 ): Promise<Chamado> {
   const chamado = await buscarChamadoPorId(id)
-
-  // Não permite editar campos de chamado fechado
   validarChamadoNaoFechado(chamado)
 
-  if (data.titulo !== undefined) {
-    validarTitulo(data.titulo)
-  }
-
-  if (data.id_responsavel !== undefined) {
-    validarResponsavel(data.id_responsavel)
-  }
+  if (data.titulo !== undefined)       validarTitulo(data.titulo)
+  if (data.id_responsavel !== undefined) validarResponsavel(data.id_responsavel)
 
   return prisma.chamado.update({
     where: { id },
     data: {
-      ...(data.titulo          !== undefined && { titulo: data.titulo.trim() }),
-      ...(data.descricao       !== undefined && { descricao: data.descricao }),
-      ...(data.prioridade      !== undefined && { prioridade: data.prioridade }),
+      ...(data.titulo           !== undefined && { titulo: data.titulo.trim() }),
+      ...(data.descricao        !== undefined && { descricao: data.descricao }),
+      ...(data.prioridade       !== undefined && { prioridade: data.prioridade }),
       ...(data.solicitante_nome !== undefined && { solicitante_nome: data.solicitante_nome }),
-      ...(data.id_responsavel  !== undefined && { id_responsavel: data.id_responsavel }),
+      ...(data.id_responsavel   !== undefined && { id_responsavel: data.id_responsavel }),
     },
   })
 }
 
-// ────────────────────────────────────────────────────────────
-// Transição de status (regra de negócio isolada)
-// ────────────────────────────────────────────────────────────
+export async function atualizarStatusChamado(
+  id: number,
+  novoStatus: Status,
+): Promise<Chamado> {
+  const chamado = await buscarChamadoPorId(id)
+  validarChamadoNaoFechado(chamado)
 
-export async function atualizarStatusChamado(){
-    
+  const dadosAtualizacao: Partial<Chamado> = { status: novoStatus }
+
+  if (novoStatus === Status.RESOLVIDO) {
+    dadosAtualizacao.data_solucao = new Date()
+  }
+
+  if (novoStatus === Status.EM_ANDAMENTO && chamado.status === Status.RESOLVIDO) {
+    dadosAtualizacao.data_solucao = null
+  }
+
+  return prisma.chamado.update({
+    where: { id },
+    data: dadosAtualizacao,
+  })
 }

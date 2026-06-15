@@ -1,14 +1,19 @@
 import { Prioridade, Status } from '@/app/generated/prisma/enums'
 import { criarChamado, atualizarStatusChamado } from '@/services/chamado'
+import { selecionarResponsavelAutomatico } from '@/services/destribuicao'
 
 
+
+jest.mock('@/services/destribuicao', () => ({
+  selecionarResponsavelAutomatico: jest.fn(),
+}))
 
 // --- Mocks do Prisma ---
 const mockCreate     = jest.fn()
 const mockFindUnique = jest.fn()
 const mockUpdate     = jest.fn()
 
-jest.mock('../../lib/prisma', () => ({
+jest.mock('@/lib/prisma', () => ({
   __esModule: true,
   default: {
     chamado: {
@@ -28,11 +33,11 @@ const DADOS_VALIDOS = {
   solicitante_nome: 'João Souza',
 }
 
-// =================================================================
+
 describe('criarChamado', () => {
   beforeEach(() => jest.clearAllMocks())
 
-  // --- Teste 1: caminho feliz ---
+
   it('deve criar um chamado com dados válidos', async () => {
     const chamadoCriado = { id: 1, ...DADOS_VALIDOS, status: Status.ABERTO, data_abertura: new Date() }
     mockCreate.mockResolvedValue(chamadoCriado)
@@ -43,7 +48,7 @@ describe('criarChamado', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1)
   })
 
-  // --- Teste 2: status padrão ---
+
   it('deve forçar status ABERTO ao criar, independentemente do input', async () => {
     mockCreate.mockResolvedValue({ id: 1, status: Status.ABERTO })
 
@@ -56,7 +61,7 @@ describe('criarChamado', () => {
     )
   })
 
-  // --- Teste 3 e 4: título obrigatório ---
+
   it('deve lançar erro se o título estiver vazio', async () => {
     await expect(criarChamado({ ...DADOS_VALIDOS, titulo: '' }))
       .rejects.toThrow('Título é obrigatório')
@@ -67,18 +72,20 @@ describe('criarChamado', () => {
       .rejects.toThrow('Título é obrigatório')
   })
 
-  // --- Teste 5: responsável obrigatório ---
-  it('deve lançar erro se id_responsavel não for informado', async () => {
+
+it('deve lançar erro se id_responsavel não for informado e a distribuição automática falhar em trazer um ID válido', async () => {
+    // Simulamos que a distribuição automática falhou e retornou um usuário com id inválido (0)
+    (selecionarResponsavelAutomatico as jest.Mock).mockResolvedValue({ id: 0 })
+
     await expect(criarChamado({ ...DADOS_VALIDOS, id_responsavel: 0 }))
       .rejects.toThrow('Responsável é obrigatório')
   })
 })
 
-// =================================================================
+
 describe('atualizarStatusChamado', () => {
   beforeEach(() => jest.clearAllMocks())
 
-  // --- Teste 1: transição válida ---
   it('deve atualizar o status de ABERTO para EM_ANDAMENTO', async () => {
     mockFindUnique.mockResolvedValue({ id: 1, status: Status.ABERTO })
     mockUpdate.mockResolvedValue({ id: 1, status: Status.EM_ANDAMENTO })
@@ -88,7 +95,7 @@ describe('atualizarStatusChamado', () => {
     expect(resultado.status).toBe(Status.EM_ANDAMENTO)
   })
 
-  // --- Teste 2: chamado não existe ---
+
   it('deve lançar erro se o chamado não existir', async () => {
     mockFindUnique.mockResolvedValue(null)
 
@@ -96,7 +103,7 @@ describe('atualizarStatusChamado', () => {
       .rejects.toThrow('Chamado não encontrado')
   })
 
-  // --- Teste 3: chamado fechado é imutável ---
+
   it('deve impedir qualquer alteração em chamado FECHADO', async () => {
     mockFindUnique.mockResolvedValue({ id: 1, status: Status.FECHADO })
 
@@ -104,7 +111,7 @@ describe('atualizarStatusChamado', () => {
       .rejects.toThrow('Chamado fechado não pode ter seu status alterado')
   })
 
-  // --- Teste 4: data_solucao preenchida ao resolver ---
+
   it('deve registrar data_solucao ao marcar como RESOLVIDO', async () => {
     mockFindUnique.mockResolvedValue({ id: 1, status: Status.EM_ANDAMENTO })
     mockUpdate.mockResolvedValue({ id: 1, status: Status.RESOLVIDO, data_solucao: new Date() })
@@ -120,7 +127,6 @@ describe('atualizarStatusChamado', () => {
     )
   })
 
-  // --- Teste 5: data_solucao limpa ao reabrir (se quiser permitir) ---
   it('deve limpar data_solucao ao reabrir um chamado RESOLVIDO', async () => {
     mockFindUnique.mockResolvedValue({ id: 1, status: Status.RESOLVIDO })
     mockUpdate.mockResolvedValue({ id: 1, status: Status.EM_ANDAMENTO, data_solucao: null })

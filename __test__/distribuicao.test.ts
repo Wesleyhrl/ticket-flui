@@ -6,7 +6,7 @@ selecionarResponsavelAutomatico
 const mockUsuarioFindMany = jest.fn()
 const mockChamadoCount = jest.fn()
 
-jest.mock('../../lib/prisma', () => ({
+jest.mock('@/lib/prisma', () => ({
   __esModule: true,
   default: {
     usuario: {
