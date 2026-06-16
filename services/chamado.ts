@@ -1,7 +1,5 @@
 import prisma from '../lib/prisma'
-// ✅ Enums de /enums
 import { Status, Prioridade } from '../app/generated/prisma/enums'
-// ✅ Tipos de /client (server-side) — nomes sem sufixo Model
 import type { Chamado } from '../app/generated/prisma/client'
 import { selecionarResponsavelAutomatico } from './destribuicao'
 
@@ -99,8 +97,7 @@ export async function atualizarChamado(
   id: number,
   data: AtualizarChamadoInput,
 ): Promise<Chamado> {
-  const chamado = await buscarChamadoPorId(id)
-  validarChamadoNaoFechado(chamado)
+  await buscarChamadoPorId(id)
 
   if (data.titulo !== undefined)       validarTitulo(data.titulo)
   if (data.id_responsavel !== undefined) validarResponsavel(data.id_responsavel)

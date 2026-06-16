@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { criarChamado, listarChamados } from '@/services/chamado'
-import { Status, Prioridade } from '@/app/generated/prisma/enums'
+import { Prioridade, Role, Status } from '@/app/generated/prisma/enums'
+import { withAuth } from '@/lib/withAuth'
 
-export async function GET(req: NextRequest) {
+export const GET = withAuth(async (req: NextRequest) => {
   try {
     const { searchParams } = req.nextUrl
 
@@ -25,24 +26,23 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     )
   }
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest) => {
   try {
     const body = await req.json()
-
     const { titulo, descricao, prioridade, solicitante_nome, id_responsavel } = body
 
     if (!titulo || !prioridade) {
       return NextResponse.json(
-        { error: 'Campos obrigatórios: titulo, prioridade' },
+        { error: 'Campos obrigatorios: titulo, prioridade' },
         { status: 400 },
       )
     }
 
     if (!Object.values(Prioridade).includes(prioridade)) {
       return NextResponse.json(
-        { error: `Prioridade inválida. Use: ${Object.values(Prioridade).join(', ')}` },
+        { error: `Prioridade invalida. Use: ${Object.values(Prioridade).join(', ')}` },
         { status: 400 },
       )
     }
@@ -61,4 +61,4 @@ export async function POST(req: NextRequest) {
     const mensagem = error instanceof Error ? error.message : 'Erro ao criar chamado'
     return NextResponse.json({ error: mensagem }, { status: 500 })
   }
-}
+}, [Role.ADMIN])
